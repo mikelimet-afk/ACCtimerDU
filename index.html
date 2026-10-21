@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sim Clock (UTC)</title>
+<style>
+:root{--bg:#f4f6f9;--fg:#111827;--accent:#2563eb;--panel:rgba(127,127,127,.12);--line:rgba(127,127,127,.35);
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--fg:#e5e7eb;--accent:#60a5fa;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1220;--fg:#e5e7eb;--accent:#60a5fa;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:20px}
+#clock{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:clamp(48px,17vw,170px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;color:var(--accent)}
+#clock small{font-size:.35em;margin-left:.15em;color:var(--fg);opacity:.7}
+#info{opacity:.7;font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+button{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:10px;cursor:pointer;min-width:64px}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.lbl{width:100%;text-align:center;font-size:12px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;margin-bottom:-2px}
+.grp{display:flex;flex-direction:column;align-items:center;gap:6px}
+#settings{display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;width:100%;max-width:460px;box-sizing:border-box}
+#settings.open{display:block}
+.crow{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+input[type=color]{width:52px;height:34px;border:1px solid var(--line);border-radius:8px;background:none;padding:2px;cursor:pointer}
+button.mark{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:700}
+#marks{width:100%;max-width:460px;box-sizing:border-box}
+#mlist{max-height:260px;overflow-y:auto}
+.mrow{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-top:6px}
+.mrow b{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--accent);white-space:nowrap}
+.mrow .sp{opacity:.6;font-size:12px;white-space:nowrap}
+.mrow input[type=text]{flex:1;min-width:0;width:auto;text-align:left;font:inherit;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px}
+.mrow button{min-width:0;padding:4px 10px}
+#float{display:none;position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));gap:8px;opacity:.45}
+#float:hover,#float:focus-within{opacity:1}
+#float button{padding:6px 12px;font-size:13px}
+body.clean .ui{display:none!important}
+body.clean #float{display:flex}
+body.clean #clock{font-size:clamp(56px,21vw,280px)}
+#toast{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--accent);color:var(--bg);padding:8px 14px;border-radius:99px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="grp">
+  <div id="clock">00:00:00<small>Z</small></div>
+  <div id="info" class="ui">1× · running</div>
+</div>
+
+<div class="grp ui"><div class="lbl">Adjust time</div>
+  <div class="row">
+    <button data-adj="-60">−1 hr</button><button data-adj="-10">−10 min</button><button data-adj="-5">−5 min</button><button data-adj="-1">−1 min</button>
+    <button data-adj="1">+1 min</button><button data-adj="5">+5 min</button><button data-adj="10">+10 min</button><button data-adj="60">+1 hr</button>
+  </div>
+</div>
+
+<div class="grp ui"><div class="lbl">Speed</div>
+  <div class="row" id="speeds"></div>
+</div>
+
+<div class="row ui">
+  <button class="mark" id="mark">⚑ Mark time</button>
+  <button id="toggle">Pause</button>
+  <button id="reset">Reset 0000Z</button>
+  <button id="gear">⚙ Settings</button>
+  <button id="hide">Clock only</button>
+</div>
+<div class="lbl ui">Space pause · M mark · H clock only</div>
+
+<div id="settings" class="ui">
+  <div class="lbl" style="margin-bottom:8px">Colors</div>
+  <div class="row" id="themes" style="margin-bottom:10px"></div>
+  <div class="crow"><span>Background</span><input type="color" id="c-bg"></div>
+  <div class="crow"><span>Text</span><input type="color" id="c-fg"></div>
+  <div class="crow"><span>Clock / accent</span><input type="color" id="c-accent"></div>
+  <button id="colreset" style="width:100%;margin-top:6px">Reset colors to default</button>
+</div>
+
+<div id="marks" class="ui">
+  <div class="lbl">Marks <span id="mcount"></span></div>
+  <div id="mlist"></div>
+  <div class="row" style="margin-top:8px"><button id="mcopy">Copy list</button><button id="mclear">Clear marks</button></div>
+</div>
+<div id="float"><button id="fmark">⚑ Mark</button><button id="fshow">Show controls</button></div>
+<div id="toast"></div>
+
+<script>
+const SPEEDS=[0.25,0.5,1,2,3,5];
+const DAY=86400000;
+const THEMES={
+  "Dark":{bg:"#0b1220",fg:"#e5e7eb",accent:"#60a5fa"},
+  "Light":{bg:"#f4f6f9",fg:"#111827",accent:"#2563eb"},
+  "Radar green":{bg:"#020a04",fg:"#8fd19e",accent:"#39ff6a"},
+  "Amber":{bg:"#120c02",fg:"#e8c78a",accent:"#ffb000"}
+};
+const $=id=>document.getElementById(id);
+let sim=0,speed=1,running=true,last=performance.now(),colors=null;
+
+try{
+  const s=JSON.parse(localStorage.getItem('simclock-colors'));if(s&&s.bg)colors=s;
+  const sp=parseFloat(localStorage.getItem('simclock-speed'));if(SPEEDS.includes(sp))speed=sp;
+}catch(e){}
+
+function save(){try{localStorage.setItem('simclock-colors',JSON.stringify(colors));localStorage.setItem('simclock-speed',String(speed))}catch(e){}}
+function wrap(){sim=((sim%DAY)+DAY)%DAY}
+function pad(n){return String(n).padStart(2,'0')}
+function label(s){return s===0.25?'¼×':s===0.5?'½×':s+'×'}
+
+function applyColors(){
+  const r=document.documentElement.style;
+  if(colors){r.setProperty('--bg',colors.bg);r.setProperty('--fg',colors.fg);r.setProperty('--accent',colors.accent)}
+  else{['--bg','--fg','--accent'].forEach(v=>r.removeProperty(v))}
+  const cs=getComputedStyle(document.documentElement);
+  const hex=v=>{const x=cs.getPropertyValue(v).trim();return /^#[0-9a-f]{6}$/i.test(x)?x:'#000000'};
+  $('c-bg').value=hex('--bg');$('c-fg').value=hex('--fg');$('c-accent').value=hex('--accent');
+}
+
+function render(){
+  const t=Math.floor(sim/1000);
+  $('clock').innerHTML=pad(Math.floor(t/3600))+':'+pad(Math.floor(t%3600/60))+':'+pad(t%60)+'<small>Z</small>';
+  $('info').textContent=label(speed)+' · '+(running?'running':'paused');
+  $('toggle').textContent=running?'Pause':'Resume';
+  document.querySelectorAll('#speeds button').forEach(b=>b.classList.toggle('on',+b.dataset.s===speed));
+}
+
+function loop(){
+  const now=performance.now();
+  if(running){sim+=(now-last)*speed;wrap()}
+  last=now;render();
+  requestAnimationFrame(loop);
+}
+
+SPEEDS.forEach(s=>{
+  const b=document.createElement('button');b.textContent=label(s);b.dataset.s=s;
+  b.onclick=()=>{speed=s;save();render()};$('speeds').appendChild(b);
+});
+Object.keys(THEMES).forEach(n=>{
+  const b=document.createElement('button');b.textContent=n;
+  b.onclick=()=>{colors={...THEMES[n]};save();applyColors()};$('themes').appendChild(b);
+});
+document.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>{sim+=+b.dataset.adj*60000;wrap();render()});
+$('toggle').onclick=()=>{running=!running;last=performance.now();render()};
+$('reset').onclick=()=>{sim=0;render()};
+$('gear').onclick=()=>$('settings').classList.toggle('open');
+['bg','fg','accent'].forEach(k=>$('c-'+k).oninput=e=>{
+  colors=colors||{bg:$('c-bg').value,fg:$('c-fg').value,accent:$('c-accent').value};
+  colors[k]=e.target.value;save();applyColors();
+});
+$('colreset').onclick=()=>{colors=null;try{localStorage.removeItem('simclock-colors')}catch(e){}applyColors()};
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();$('toggle').click()}
+  if(e.key==='m'||e.key==='M')addMark();
+  if(e.key==='h'||e.key==='H')setClean(!document.body.classList.contains('clean'));
+});
+
+let marks=[];
+try{const m=JSON.parse(localStorage.getItem('simclock-marks'));if(Array.isArray(m))marks=m}catch(e){}
+function saveMarks(){try{localStorage.setItem('simclock-marks',JSON.stringify(marks))}catch(e){}}
+function fmtT(ms){const t=Math.floor(ms/1000);return pad(Math.floor(t/3600))+':'+pad(Math.floor(t%3600/60))+':'+pad(t%60)+'Z'}
+let toastT=null;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1600)}
+function renderMarks(){
+  const l=$('mlist');l.textContent='';
+  $('mcount').textContent=marks.length?'('+marks.length+')':'';
+  if(!marks.length){const p=document.createElement('div');p.style.cssText='text-align:center;opacity:.6;font-size:13px;margin-top:6px';p.textContent='No marks yet. Press Mark (or M) during the run.';l.appendChild(p)}
+  marks.forEach((m,i)=>{
+    const r=document.createElement('div');r.className='mrow';
+    const n=document.createElement('span');n.className='sp';n.textContent='#'+(i+1);
+    const t=document.createElement('b');t.textContent=fmtT(m.t);
+    const s=document.createElement('span');s.className='sp';s.textContent=label(m.sp);
+    const inp=document.createElement('input');inp.type='text';inp.placeholder='Note (decision, event…)';inp.value=m.note||'';
+    inp.oninput=()=>{m.note=inp.value;saveMarks()};
+    const d=document.createElement('button');d.textContent='✕';d.title='Delete';
+    d.onclick=()=>{marks.splice(i,1);saveMarks();renderMarks()};
+    r.append(n,t,s,inp,d);l.appendChild(r);
+  });
+  l.scrollTop=l.scrollHeight;
+}
+function addMark(){
+  const t=Math.floor(sim/1000)*1000;
+  marks.push({t,sp:speed,note:''});saveMarks();renderMarks();toast('Marked '+fmtT(t));
+}
+function setClean(on){document.body.classList.toggle('clean',on)}
+$('mark').onclick=addMark;$('fmark').onclick=addMark;
+$('hide').onclick=()=>setClean(true);$('fshow').onclick=()=>setClean(false);
+$('mcopy').onclick=()=>{
+  const txt=marks.map((m,i)=>'#'+(i+1)+'  '+fmtT(m.t)+'  ('+label(m.sp)+')'+(m.note?'  '+m.note:'')).join('\n');
+  if(!txt){toast('Nothing to copy');return}
+  let ok=false;
+  try{const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();ok=document.execCommand('copy');ta.remove()}catch(e){}
+  if(!ok&&navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>toast('Copied'),()=>toast('Copy failed'));return}
+  toast(ok?'Copied':'Copy failed');
+};
+let clr=null;
+$('mclear').onclick=()=>{
+  if(!marks.length)return;
+  if(clr){clearTimeout(clr);clr=null;marks=[];saveMarks();renderMarks();$('mclear').textContent='Clear marks';return}
+  $('mclear').textContent='Tap again to clear';
+  clr=setTimeout(()=>{clr=null;$('mclear').textContent='Clear marks'},3000);
+};
+renderMarks();
+applyColors();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
