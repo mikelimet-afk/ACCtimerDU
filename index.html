@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sim Clock (UTC)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Allerta+Stencil&family=Black+Ops+One&family=Orbitron:wght@700&display=swap">
 <style>
 :root{--bg:#f4f6f9;--fg:#111827;--accent:#2563eb;--panel:rgba(127,127,127,.12);--line:rgba(127,127,127,.35);
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -11,7 +13,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 :root[data-theme="dark"]{--bg:#0b1220;--fg:#e5e7eb;--accent:#60a5fa;color-scheme:dark}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:20px}
-#clock{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:clamp(48px,17vw,170px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;color:var(--accent)}
+#clock{font-family:var(--clockfont,ui-monospace,"SF Mono",Menlo,Consolas,monospace);font-size:min(calc(88vw / var(--wd,4.7)),28vh,260px);font-size:min(calc(88vw / var(--wd,4.7)),28dvh,260px);font-weight:var(--fw,700);line-height:1;color:var(--accent);white-space:nowrap}
 #clock small{font-size:.35em;margin-left:.15em;color:var(--fg);opacity:.7}
 #info{opacity:.7;font-size:14px}
 .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
@@ -37,9 +39,25 @@ button.mark{background:var(--accent);color:var(--bg);border-color:var(--accent);
 #float button{padding:6px 12px;font-size:13px}
 body.clean .ui{display:none!important}
 body.clean #float{display:flex}
-body.clean #clock{font-size:clamp(56px,21vw,280px)}
+body.clean #clock{font-size:min(calc(92vw / var(--wd,4.7)),60vh,520px);font-size:min(calc(92vw / var(--wd,4.7)),60dvh,520px)}
 #toast{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--accent);color:var(--bg);padding:8px 14px;border-radius:99px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.show{opacity:1}
+.d{display:inline-block;width:calc(var(--dw,.6)*1em);text-align:center}
+.c{display:inline-block;width:.3em;text-align:center}
+body{min-height:100vh;min-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;min-height:44px}
+@media (max-width:560px){
+body{padding:10px;gap:14px}
+.grp .row{display:grid;grid-template-columns:repeat(4,1fr);width:100%;max-width:420px}
+.grp .row button{min-width:0;padding:10px 4px}
+.grp #speeds{grid-template-columns:repeat(3,1fr)}
+}
+@media (orientation:landscape) and (max-height:520px){
+body{gap:10px;padding:8px 16px}
+button{min-height:40px;padding:6px 12px}
+#clock{font-size:min(calc(70vw / var(--wd,4.7)),42vh);font-size:min(calc(70vw / var(--wd,4.7)),42dvh)}
+.grp>.lbl,body>.lbl{display:none}
+}
 </style>
 </head>
 <body>
@@ -69,6 +87,8 @@ body.clean #clock{font-size:clamp(56px,21vw,280px)}
 <div class="lbl ui">Space pause · M mark · H clock only</div>
 
 <div id="settings" class="ui">
+  <div class="lbl" style="margin-bottom:8px">Clock font</div>
+  <div class="row" id="fonts" style="margin-bottom:14px"></div>
   <div class="lbl" style="margin-bottom:8px">Colors</div>
   <div class="row" id="themes" style="margin-bottom:10px"></div>
   <div class="crow"><span>Background</span><input type="color" id="c-bg"></div>
@@ -88,6 +108,13 @@ body.clean #clock{font-size:clamp(56px,21vw,280px)}
 <script>
 const SPEEDS=[0.25,0.5,1,2,3,5];
 const DAY=86400000;
+const FONTS={
+ "Standard":{f:'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif',w:600},
+ "Monospace":{f:'ui-monospace,"SF Mono",Menlo,Consolas,monospace',w:700},
+ "Military stencil":{f:'"Allerta Stencil",Impact,"Arial Narrow",sans-serif',w:400},
+ "Military heavy":{f:'"Black Ops One",Impact,"Arial Black",sans-serif',w:400},
+ "Digital":{f:'Orbitron,"Courier New",monospace',w:700}
+};
 const THEMES={
   "Dark":{bg:"#0b1220",fg:"#e5e7eb",accent:"#60a5fa"},
   "Light":{bg:"#f4f6f9",fg:"#111827",accent:"#2563eb"},
@@ -95,14 +122,15 @@ const THEMES={
   "Amber":{bg:"#120c02",fg:"#e8c78a",accent:"#ffb000"}
 };
 const $=id=>document.getElementById(id);
-let sim=0,speed=1,running=true,last=performance.now(),colors=null;
+let sim=0,speed=1,running=true,last=performance.now(),colors=null,lastTs='',font='Standard';
 
 try{
   const s=JSON.parse(localStorage.getItem('simclock-colors'));if(s&&s.bg)colors=s;
   const sp=parseFloat(localStorage.getItem('simclock-speed'));if(SPEEDS.includes(sp))speed=sp;
+  const ft=localStorage.getItem('simclock-font');if(FONTS[ft])font=ft;
 }catch(e){}
 
-function save(){try{localStorage.setItem('simclock-colors',JSON.stringify(colors));localStorage.setItem('simclock-speed',String(speed))}catch(e){}}
+function save(){try{localStorage.setItem('simclock-colors',JSON.stringify(colors));localStorage.setItem('simclock-speed',String(speed));localStorage.setItem('simclock-font',font)}catch(e){}}
 function wrap(){sim=((sim%DAY)+DAY)%DAY}
 function pad(n){return String(n).padStart(2,'0')}
 function label(s){return s===0.25?'¼×':s===0.5?'½×':s+'×'}
@@ -118,7 +146,8 @@ function applyColors(){
 
 function render(){
   const t=Math.floor(sim/1000);
-  $('clock').innerHTML=pad(Math.floor(t/3600))+':'+pad(Math.floor(t%3600/60))+':'+pad(t%60)+'<small>Z</small>';
+  const ts=pad(Math.floor(t/3600))+':'+pad(Math.floor(t%3600/60))+':'+pad(t%60);
+  if(ts!==lastTs){lastTs=ts;$('clock').innerHTML=ts.split('').map(c=>c===':'?'<span class="c">:</span>':'<span class="d">'+c+'</span>').join('')+'<small>Z</small>'}
   $('info').textContent=label(speed)+' · '+(running?'running':'paused');
   $('toggle').textContent=running?'Pause':'Resume';
   document.querySelectorAll('#speeds button').forEach(b=>b.classList.toggle('on',+b.dataset.s===speed));
@@ -201,7 +230,31 @@ $('mclear').onclick=()=>{
   clr=setTimeout(()=>{clr=null;$('mclear').textContent='Clear marks'},3000);
 };
 renderMarks();
-applyColors();requestAnimationFrame(loop);
+function measure(sp){
+  const s=document.createElement('span');
+  s.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;font-size:100px;font-family:'+sp.f+';font-weight:'+sp.w;
+  document.body.appendChild(s);let mx=0;
+  for(let i=0;i<10;i++){s.textContent=String(i);mx=Math.max(mx,s.offsetWidth)}
+  s.remove();return mx/100;
+}
+function applyFont(){
+  const sp=FONTS[font],r=document.documentElement.style;
+  r.setProperty('--clockfont',sp.f);r.setProperty('--fw',sp.w);
+  const dw=Math.max(.5,measure(sp)+.03);
+  r.setProperty('--dw',dw);r.setProperty('--wd',6*dw+1.1);
+  document.querySelectorAll('#fonts button').forEach(b=>b.classList.toggle('on',b.dataset.f===font));
+}
+Object.keys(FONTS).forEach(n=>{
+  const b=document.createElement('button');b.textContent=n;b.dataset.f=n;b.style.fontFamily=FONTS[n].f;
+  b.onclick=()=>{font=n;save();applyFont()};$('fonts').appendChild(b);
+});
+try{
+  if(document.fonts){
+    document.fonts.ready.then(applyFont);
+    Promise.all(Object.values(FONTS).map(s=>document.fonts.load('100px '+s.f.split(',')[0]))).then(applyFont,applyFont);
+  }
+}catch(e){}
+applyColors();applyFont();requestAnimationFrame(loop);
 </script>
 </body>
 </html>
